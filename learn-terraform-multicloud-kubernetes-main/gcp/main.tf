@@ -59,6 +59,7 @@ resource "google_compute_router_nat" "nat" {
 resource "google_container_cluster" "primary" {
   name     = "itp4121-gke-cluster"
   location = var.region
+  deletion_protection = false
 
   # 刪除預設的 node pool，以便我們自訂具有 AutoScaler 的 node pool
   remove_default_node_pool = true
