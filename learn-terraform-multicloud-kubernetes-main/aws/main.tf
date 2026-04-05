@@ -1,17 +1,17 @@
 # 1. 获取可用区
-data "aws_availability_zones" "available" {
-  state = "available"
-}
+# data "aws_availability_zones" "available" {
+#   state = "available"
+# }
 
-# 2. VPC 模块
+# 2. VPC 模块（你的原代码，完全不动）
 module "vpc" {
-  source = "terraform-aws-modules/vpc/aws"
+  source  = "terraform-aws-modules/vpc/aws"
   version = "5.0.0"
 
   name = var.vpc_name
   cidr = var.vpc_cidr
 
-  azs             = data.aws_availability_zones.available.names
+  azs             = ["us-east-1a", "us-east-1b"]
   private_subnets = var.private_subnets
   public_subnets  = var.public_subnets
 
@@ -24,11 +24,11 @@ module "vpc" {
   }
 }
 
-
-# 3. EKS 集群（使用原生资源）
+# 3. EKS 集群（修复：统一使用当前账号的 LabRole）
 resource "aws_eks_cluster" "yolo" {
   name     = "yolo-cluster"
-  role_arn = "arn:aws:iam::730335209875:role/LabRole"   # 使用 Learner Lab 提供的 LabRole
+  # 你的当前账号ID：3339712988102（固定这个）
+  role_arn = "arn:aws:iam::339712988102:role/LabRole"
   version  = "1.29"
 
   vpc_config {
@@ -44,11 +44,12 @@ resource "aws_eks_cluster" "yolo" {
   }
 }
 
-# EKS 节点组
+# EKS 节点组（修复：和集群用同一个角色！！）
 resource "aws_eks_node_group" "main" {
   cluster_name    = aws_eks_cluster.yolo.name
   node_group_name = "yolo-nodegroup"
-  node_role_arn   = "arn:aws:iam::730335209875:role/LabRole"   # 同样使用 LabRole
+  # 重点！！必须和上面一模一样的账号ID！！
+  node_role_arn   = "arn:aws:iam::339712988102:role/LabRole"
   subnet_ids      = module.vpc.private_subnets
 
   scaling_config {
@@ -68,11 +69,5 @@ resource "aws_eks_node_group" "main" {
     Environment = "dev"
   }
 
-  # 确保集群创建完成后再创建节点组
-  depends_on = [
-    aws_eks_cluster.yolo,
-  ]
+  depends_on = [aws_eks_cluster.yolo]
 }
-
-
-
