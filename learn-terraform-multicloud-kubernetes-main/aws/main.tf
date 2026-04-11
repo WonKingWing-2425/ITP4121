@@ -3,6 +3,8 @@
 #   state = "available"
 # }
 
+data "aws_caller_identity" "current" {}   #动态获取当前账号 ID
+
 # 2. VPC 模块（你的原代码，完全不动）
 module "vpc" {
   source  = "terraform-aws-modules/vpc/aws"
@@ -27,8 +29,8 @@ module "vpc" {
 # 3. EKS 集群（修复：统一使用当前账号的 LabRole）
 resource "aws_eks_cluster" "yolo" {
   name     = "yolo-cluster"
-  # 你的当前账号ID：3339712988102（固定这个）
-  role_arn = "arn:aws:iam::339712988102:role/LabRole"
+  # 你的当前账号ID：
+  role_arn = "arn:aws:iam::${data.aws_caller_identity.current.account_id}:role/LabRole"
   version  = "1.29"
 
   vpc_config {
@@ -49,8 +51,11 @@ resource "aws_eks_node_group" "main" {
   cluster_name    = aws_eks_cluster.yolo.name
   node_group_name = "yolo-nodegroup"
   # 重点！！必须和上面一模一样的账号ID！！
-  node_role_arn   = "arn:aws:iam::339712988102:role/LabRole"
+  node_role_arn = "arn:aws:iam::${data.aws_caller_identity.current.account_id}:role/LabRole"
   subnet_ids      = module.vpc.private_subnets
+
+    # 使用 AL2023 AMI
+  ami_type = "AL2023_x86_64_STANDARD"
 
   scaling_config {
     desired_size = 2
