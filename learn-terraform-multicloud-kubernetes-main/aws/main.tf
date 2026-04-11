@@ -1,127 +1,78 @@
-# Copyright (c) HashiCorp, Inc.
-# SPDX-License-Identifier: MPL-2.0
+# 1. 获取可用区
+# data "aws_availability_zones" "available" {
+#   state = "available"
+# }
 
-provider "aws" {
-  region = "us-east-2"
-}
+data "aws_caller_identity" "current" {}   #动态获取当前账号 ID
 
-data "aws_availability_zones" "available" {}
-
-locals {
-  cluster_name = "education-eks-${random_string.suffix.result}"
-}
-
-resource "random_string" "suffix" {
-  length  = 8
-  special = false
-}
-
+# 2. VPC 模块（你的原代码，完全不动）
 module "vpc" {
   source  = "terraform-aws-modules/vpc/aws"
-  version = "5.1.1"
+  version = "5.0.0"
 
-  name            = "education-eks"
-  cidr            = "10.0.0.0/16"
-  azs             = data.aws_availability_zones.available.names
-  private_subnets = ["10.0.1.0/24", "10.0.2.0/24", "10.0.3.0/24"]
-  public_subnets  = ["10.0.4.0/24", "10.0.5.0/24", "10.0.6.0/24"]
+  name = var.vpc_name
+  cidr = var.vpc_cidr
 
-  enable_nat_gateway   = true
-  single_nat_gateway   = true
-  enable_dns_hostnames = true
+  azs             = ["us-east-1a", "us-east-1b"]
+  private_subnets = var.private_subnets
+  public_subnets  = var.public_subnets
+
+  enable_nat_gateway = true
+  enable_vpn_gateway = false
 
   tags = {
-    "kubernetes.io/cluster/${local.cluster_name}" = "shared"
-  }
-
-  public_subnet_tags = {
-    "kubernetes.io/cluster/${local.cluster_name}" = "shared"
-    "kubernetes.io/role/elb"                      = 1
-  }
-
-  private_subnet_tags = {
-    "kubernetes.io/cluster/${local.cluster_name}" = "shared"
-    "kubernetes.io/role/internal-elb"             = 1
+    Environment = "dev"
+    ManagedBy   = "Terraform"
   }
 }
 
+# 3. EKS 集群（修复：统一使用当前账号的 LabRole）
+resource "aws_eks_cluster" "yolo" {
+  name     = "yolo-cluster"
+  # 你的当前账号ID：
+  role_arn = "arn:aws:iam::${data.aws_caller_identity.current.account_id}:role/LabRole"
+  version  = "1.29"
 
-module "eks" {
-  source  = "terraform-aws-modules/eks/aws"
-  version = "19.15.3"
-
-  cluster_name    = local.cluster_name
-  cluster_version = "1.27"
-
-  vpc_id                         = module.vpc.vpc_id
-  subnet_ids                     = module.vpc.private_subnets
-  cluster_endpoint_public_access = true
-
-  eks_managed_node_group_defaults = {
-    ami_type = "AL2_x86_64"
+  vpc_config {
+    subnet_ids              = module.vpc.private_subnets
+    endpoint_public_access  = true
+    endpoint_private_access = true
+    public_access_cidrs     = ["0.0.0.0/0"]
   }
 
-  eks_managed_node_groups = {
-    consul = {
-      name           = "consul-group"
-      instance_types = ["t3a.medium"]
-      min_size       = 1
-      max_size       = 3
-      desired_size   = 3
-    }
-  }
-
-  node_security_group_additional_rules = {
-    ingress_self_all = {
-      description = "Node to node all ports/protocols"
-      protocol    = "-1"
-      from_port   = 0
-      to_port     = 0
-      type        = "ingress"
-      self        = true
-    }
-    ingress_cluster_all = {
-      description                   = "Cluster to node all ports/protocols"
-      protocol                      = "-1"
-      from_port                     = 0
-      to_port                       = 0
-      type                          = "ingress"
-      source_cluster_security_group = true
-    }
-    egress_all = {
-      description      = "Node all egress"
-      protocol         = "-1"
-      from_port        = 0
-      to_port          = 0
-      type             = "egress"
-      cidr_blocks      = ["0.0.0.0/0"]
-      ipv6_cidr_blocks = ["::/0"]
-    }
-  }
-}
-
-data "aws_iam_policy" "ebs_csi_policy" {
-  arn = "arn:aws:iam::aws:policy/service-role/AmazonEBSCSIDriverPolicy"
-}
-
-module "irsa-ebs-csi" {
-  source  = "terraform-aws-modules/iam/aws//modules/iam-assumable-role-with-oidc"
-  version = "4.7.0"
-
-  create_role                   = true
-  role_name                     = "AmazonEKSTFEBSCSIRole-${module.eks.cluster_name}"
-  provider_url                  = module.eks.oidc_provider
-  role_policy_arns              = [data.aws_iam_policy.ebs_csi_policy.arn]
-  oidc_fully_qualified_subjects = ["system:serviceaccount:kube-system:ebs-csi-controller-sa"]
-}
-
-resource "aws_eks_addon" "ebs-csi" {
-  cluster_name             = module.eks.cluster_name
-  addon_name               = "aws-ebs-csi-driver"
-  addon_version            = "v1.20.0-eksbuild.1"
-  service_account_role_arn = module.irsa-ebs-csi.iam_role_arn
   tags = {
-    "eks_addon" = "ebs-csi"
-    "terraform" = "true"
+    Environment = "dev"
+    Project     = "ITP4121"
   }
+}
+
+# EKS 节点组（修复：和集群用同一个角色！！）
+resource "aws_eks_node_group" "main" {
+  cluster_name    = aws_eks_cluster.yolo.name
+  node_group_name = "yolo-nodegroup"
+  # 重点！！必须和上面一模一样的账号ID！！
+  node_role_arn = "arn:aws:iam::${data.aws_caller_identity.current.account_id}:role/LabRole"
+  subnet_ids      = module.vpc.private_subnets
+
+    # 使用 AL2023 AMI
+  ami_type = "AL2023_x86_64_STANDARD"
+
+  scaling_config {
+    desired_size = 2
+    max_size     = 5
+    min_size     = 2
+  }
+
+  instance_types = ["t3.medium"]
+
+  update_config {
+    max_unavailable = 1
+  }
+
+  tags = {
+    Name        = "yolo-worker"
+    Environment = "dev"
+  }
+
+  depends_on = [aws_eks_cluster.yolo]
 }

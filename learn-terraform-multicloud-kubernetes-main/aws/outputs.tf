@@ -1,17 +1,24 @@
-# Copyright (c) HashiCorp, Inc.
-# SPDX-License-Identifier: MPL-2.0
-
-output "cluster_id" {
-  description = "EKS cluster ID."
-  value       = module.eks.cluster_id
+output "vpc_id" {
+  value = module.vpc.vpc_id
 }
 
-output "region" {
-  description = "AWS region"
-  value       = var.region
+output "private_subnet_ids" {
+  value = module.vpc.private_subnets
 }
 
-output "cluster_name" {
-  description = "Kubernetes Cluster Name"
-  value       = local.cluster_name
+output "public_subnet_ids" {
+  value = module.vpc.public_subnets
+}
+
+
+output "eks_cluster_name" {
+  value = aws_eks_cluster.yolo.name
+}
+
+output "eks_cluster_endpoint" {
+  value = aws_eks_cluster.yolo.endpoint
+}
+
+output "eks_cluster_ca_certificate" {
+  value = aws_eks_cluster.yolo.certificate_authority[0].data
 }
