@@ -18,3 +18,7 @@ terraform plan
 terraform apply
 
 terraform destroy
+
+
+sudo apt-get update && sudo apt-get install -y google-cloud-cli-gke-gcloud-auth-plugin
+get nodes
