@@ -30,3 +30,10 @@ override.tf.json
 
 # Include tfplan files to ignore the plan output of command: terraform plan -out=tfplan
 # example: *tfplan*
+
+# GCP service account keys
+*.json
+
+# Local CLI config
+.terraformrc
+terraform.rc
